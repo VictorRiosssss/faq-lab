@@ -184,28 +184,36 @@ desenvolvimento local), sem Caddy e sem publicar portas no host — só o essenc
 1. No Coolify, crie um novo recurso do tipo **Docker Compose**, apontando para este
    repositório Git — ele detecta o `docker-compose.yaml` da raiz automaticamente (não o
    `docker-compose.prod.yml`, que é da Opção B).
-2. O Coolify vai detectar as variáveis do bloco `environment:` do `app` e do `postgres`
-   automaticamente e listar na aba de variáveis de ambiente do recurso. Preencha lá
-   (**não** num `.env` commitado):
-   - `POSTGRES_PASSWORD` — uma senha forte.
-   - `NEXTAUTH_SECRET` — gere com `openssl rand -base64 32`.
-   - `NEXTAUTH_URL` — `https://` + o domínio que você vai configurar no passo 3.
-   - `SEED_ADMIN_PASSWORD` — uma senha conhecida, ou deixe em branco para o container gerar
-     uma aleatória (aparece nos logs do serviço `app` na primeira execução — veja em
-     **Logs** no próprio Coolify).
-   - `POSTGRES_USER`/`POSTGRES_DB`/`SEED_ADMIN_LOGIN`/`SEED_ADMIN_NAME` têm valores padrão
-     no compose (`labplan`/`labplan_db`/`admin`/`Administrador`) — só mude se quiser outros.
-3. Configure o domínio do serviço `app` na aba de domínios do recurso (Coolify cuida do
+2. **Senha do banco e segredo de sessão são gerados automaticamente.** O compose usa as
+   *magic variables* do Coolify (`SERVICE_PASSWORD_POSTGRES` e `SERVICE_BASE64_64_NEXTAUTH`):
+   ele cria os valores no primeiro deploy, guarda, e mostra na aba de variáveis do recurso.
+   Não precisa preencher nada para o stack subir.
+3. A única variável que **você precisa preencher** na aba de variáveis do Coolify é a
+   `NEXTAUTH_URL` — a URL pública completa, com `https://` e o mesmo domínio do passo 4
+   (ex.: `https://processos.suaempresa.com.br`). Sem ela o login não redireciona certo.
+
+   Opcionais (todas têm padrão no compose): `POSTGRES_USER`/`POSTGRES_DB`
+   (`labplan`/`labplan_db`), `SEED_ADMIN_LOGIN`/`SEED_ADMIN_NAME` (`admin`/`Administrador`)
+   e `SEED_ADMIN_PASSWORD` — essa última, se ficar em branco, faz o seed gerar uma senha
+   aleatória e imprimir **uma única vez** nos logs do serviço `app` (aba **Logs** do Coolify).
+4. Configure o domínio do serviço `app` na aba de domínios do recurso (Coolify cuida do
    certificado HTTPS sozinho). O `app` escuta na porta `3000` — se o Coolify pedir uma
    porta explícita no domínio, use `:3000`.
-4. Deploy. O `docker-entrypoint.sh` aplica as migrations e garante o usuário admin antes de
+5. Deploy. O `docker-entrypoint.sh` aplica as migrations e garante o usuário admin antes de
    iniciar o Next.js, exatamente como na opção B abaixo.
 
-**Se ainda dá erro depois disso**: confira nos logs do serviço `app` se `DATABASE_URL`
-chegou populada (deve aparecer algo como `postgresql://labplan:***@postgres:5432/labplan_db`
-nos logs do `prisma migrate deploy`) — se `POSTGRES_PASSWORD` ficou vazio na aba de
-variáveis do Coolify, a interpolação `${POSTGRES_PASSWORD}` no compose vira uma string
-vazia e a conexão falha.
+**Se o deploy falhar com `dependency failed to start: container postgres-... is unhealthy`**
+logo no primeiro segundo (sem esperar o healthcheck): é o Postgres morrendo ao subir. Veja
+os logs do container `postgres` — se aparecer *"Database is uninitialized and superuser
+password is not specified"*, a senha chegou vazia. Confira na aba de variáveis do Coolify
+se `SERVICE_PASSWORD_POSTGRES` foi gerada; se a sua versão do Coolify não suportar magic
+variables (precisa de v4.0.0-beta.411+), crie essa variável manualmente lá com uma senha
+forte.
+
+**Atenção ao trocar a senha do Postgres depois do primeiro deploy**: o volume `pgdata` já
+foi inicializado com a senha antiga, e mudar a variável não altera a senha dentro do banco
+— a aplicação passa a falhar na autenticação. Nesse caso, troque a senha no próprio banco
+(`ALTER USER labplan WITH PASSWORD '...'`) em vez de só mudar a variável.
 
 ### Opção B — VPS pura (Docker Compose + Caddy, sem painel)
 

@@ -1,49 +1,64 @@
+# Compose para deploy no Coolify (nome do arquivo exigido por ele).
+# Não confundir com docker-compose.yml — aquele é só o Postgres do ambiente
+# de desenvolvimento local.
+#
+# As variáveis SERVICE_* são "magic variables" do Coolify: ele gera o valor
+# na primeira vez, persiste, e mostra na aba de variáveis do recurso. Isso
+# evita o deploy quebrar por credencial vazia — a imagem do Postgres se
+# recusa a inicializar se POSTGRES_PASSWORD vier em branco, e o container
+# morre no mesmo segundo em que sobe.
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-labplan}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES}
       POSTGRES_DB: ${POSTGRES_DB:-labplan_db}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-labplan}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-labplan} -d ${POSTGRES_DB:-labplan_db}"]
       interval: 5s
       timeout: 5s
       retries: 10
-    # No ports published — only the app service (same compose network)
-    # talks to it. Coolify does not need this reachable from outside.
+      # Primeiro boot roda o initdb num volume vazio; sem start_period as
+      # tentativas começam a contar antes do banco estar de pé.
+      start_period: 30s
+    # Sem portas publicadas — só o serviço app (mesma rede do compose) fala
+    # com ele. O Coolify não precisa disso acessível de fora.
 
   app:
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    # Coolify parses these `environment:` entries and lists them in its own
-    # UI for you to fill in — no `.env` file needed (and none is read by
-    # Coolify's Docker Compose deployments the way a manual `docker compose
-    # up --env-file` on a plain VPS would).
+    # O Coolify detecta estas entradas e lista na aba de variáveis do
+    # recurso — não existe .env aqui (ele não lê .env do repositório em
+    # deployments de Docker Compose, diferente de um `docker compose up`
+    # manual numa VPS pura).
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-labplan}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-labplan_db}
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-labplan}:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/${POSTGRES_DB:-labplan_db}
+      NEXTAUTH_SECRET: ${SERVICE_BASE64_64_NEXTAUTH}
+      # Precisa ser a URL pública completa, com https:// — preencha na aba de
+      # variáveis do Coolify com o mesmo domínio configurado para o serviço.
       NEXTAUTH_URL: ${NEXTAUTH_URL}
       SEED_ADMIN_LOGIN: ${SEED_ADMIN_LOGIN:-admin}
       SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-Administrador}
-      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
-      # Never seed the dev-only fixture questions/attachments in production.
+      # Em branco = o seed gera uma senha aleatória e imprime nos logs do
+      # container na primeira execução.
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      # Nunca criar as perguntas/anexos fictícios de desenvolvimento aqui.
       SEED_SAMPLE_DATA: "false"
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - attachments:/app/storage/attachments
-    # Only exposed on the internal Docker network — no host port mapping.
-    # Coolify's own Traefik proxy reaches it over that network directly;
-    # bringing your own reverse proxy/port publish here would conflict with
-    # Coolify's proxy on 80/443. Assign the domain for this service (with
-    # ":3000" if Coolify asks for a port) from the Coolify UI instead.
+    # Exposto só na rede interna do Docker — sem mapear porta no host. O
+    # Traefik do próprio Coolify alcança o container por essa rede; subir um
+    # proxy próprio aqui conflitaria com ele nas portas 80/443. O domínio se
+    # configura pela interface do Coolify (porta 3000).
     expose:
       - "3000"
 
