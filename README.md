@@ -176,11 +176,11 @@ use os dois `docker-compose*.yml` ao mesmo tempo — são alternativos.
 
 Coolify já roda seu próprio proxy reverso (Traefik) cuidando de domínio/HTTPS, e gerencia
 variáveis de ambiente pela própria interface (não lê um `.env` do repositório). Por isso
-existe um compose dedicado, `docker-compose.coolify.yml`, sem Caddy e sem publicar portas
+existe um compose dedicado, `docker-compose.coolify.yaml`, sem Caddy e sem publicar portas
 no host — só o essencial (Postgres + app) para o Coolify orquestrar por cima.
 
 1. No Coolify, crie um novo recurso do tipo **Docker Compose**, apontando para este
-   repositório Git e o arquivo `docker-compose.coolify.yml` (não o `docker-compose.prod.yml`).
+   repositório Git e o arquivo `docker-compose.coolify.yaml` (não o `docker-compose.prod.yml`).
 2. O Coolify vai detectar as variáveis do bloco `environment:` do `app` e do `postgres`
    automaticamente e listar na aba de variáveis de ambiente do recurso. Preencha lá
    (**não** num `.env` commitado):
