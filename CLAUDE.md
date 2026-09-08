@@ -7,6 +7,55 @@ dúvidas sobre processos internos organizados por setor; administradores gerenci
 usuários, setores, perguntas/respostas e um fluxo de sugestões. Ver o plano completo em
 `C:\Users\Victor Gabriel Rios\.claude\plans\deep-painting-pretzel.md`.
 
+## Checkpoint — 2026-09-08g (deploy Coolify: 3 bugs reais corrigidos em produção)
+
+Continuação direta do checkpoint anterior — a primeira tentativa de deploy no Coolify do
+usuário (site real: `npi.labplan.com.br`, projeto Coolify "Nivus - CRM Labplan Franquias")
+passou por três problemas reais, todos encontrados só porque o usuário estava rodando de
+verdade contra a instância dele (eu não tenho acesso a ela — cada correção foi validada
+localmente com Docker antes de mandar, mas a confirmação final sempre veio do log real que
+o usuário colou):
+
+1. **Nome de arquivo**: Coolify exige exatamente `docker-compose.yaml` na raiz do repo pra
+   auto-detectar — `docker-compose.coolify.yml` e depois `docker-compose.coolify.yaml`
+   (extensão certa, nome errado) não foram reconhecidos. Renomeado para
+   `docker-compose.yaml` na raiz. **Atenção**: o repo agora tem `docker-compose.yml`
+   (Postgres do dev local) e `docker-compose.yaml` (stack completa do Coolify) — nomes
+   quase idênticos, propósitos diferentes, documentado no README pra não confundir.
+2. **Postgres morrendo instantaneamente** (`dependency failed to start: ... is unhealthy`,
+   no mesmo segundo do start — não é timeout de healthcheck, é o container saindo
+   imediatamente): `POSTGRES_PASSWORD` chegava vazia porque o Coolify não lê `.env` do
+   repositório em deployments de Docker Compose, e a variável nunca tinha sido preenchida
+   na aba de variáveis dele. Reproduzido localmente (`docker run` com
+   `POSTGRES_PASSWORD=` vazio → mesmo erro exato, "Database is uninitialized and superuser
+   password is not specified") antes de mexer no compose, pra confirmar o diagnóstico.
+   Corrigido trocando `POSTGRES_PASSWORD`/`NEXTAUTH_SECRET` pelas *magic variables* do
+   Coolify (`SERVICE_PASSWORD_POSTGRES`/`SERVICE_BASE64_64_NEXTAUTH`) — ele gera e persiste
+   sozinho, sem depender do usuário preencher nada na aba de variáveis. Adicionado também
+   `start_period: 30s` no healthcheck (o `initdb` do primeiro boot num volume vazio não
+   pode contar contra as tentativas).
+3. **Bug do seed que já estava sinalizado numa task separada virou um problema real**: o
+   usuário não anotou a senha do admin gerada automaticamente, e o container que a criou
+   já não existia mais (log rotacionado/container recriado) — senha irrecuperável pelo
+   histórico. `upsertAdminUser()` (`prisma/seed.ts`) reescrito: `SEED_ADMIN_PASSWORD`,
+   quando definida, agora **sempre redefine a senha** (create OU update), em vez de só
+   valer na criação e mentir no log depois disso. Vira o mecanismo oficial de recuperação
+   de acesso em produção — já que o `docker-entrypoint.sh` roda o seed a cada start do
+   container, redefinir a variável no Coolify + redeploy é o caminho. Testado localmente
+   ponta a ponta com um container Docker de verdade (não só teste unitário): sem senha
+   explícita e admin já existe → hash inalterado e log não mente; senha explícita definida
+   → senha antiga para de funcionar, nova funciona; reset repetido com senha diferente →
+   funciona de novo. A task `task_e1a376e8` (sinalizada num checkpoint anterior sobre esse
+   mesmo bug) pode ser descartada — resolvida aqui, não como tarefa separada.
+   - **Efeito colateral bom**: também instalado `openssl` na imagem Docker
+     (`node:22-bookworm-slim` não vem com ele) — o Prisma imprimia um aviso de
+     "failed to detect the libssl/openssl version" a cada start do container, poluindo o
+     log bem na hora em que o usuário mais precisava dele limpo pra debugar.
+- **Ainda sem deploy 100% confirmado bem-sucedido no fechamento deste checkpoint** — o
+  usuário estava no meio da tentativa com as correções mais recentes quando a sessão foi
+  compactada. Próximo passo ao retomar: confirmar com o usuário se o login em
+  `npi.labplan.com.br` já funciona com a senha definida via `SEED_ADMIN_PASSWORD`.
+
 ## Checkpoint — 2026-09-08f (deploy real: primeiro commit/push, e adaptação pra Coolify)
 
 Depois do checkpoint anterior (deploy Docker validado localmente), duas coisas
