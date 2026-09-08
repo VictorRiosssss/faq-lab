@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+storage
+coverage
+playwright-report
+test-results
+blob-report
+tests
+.env
+.env.*
+!.env.production.example
+*.log
+.vscode
+.claude

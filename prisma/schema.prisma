@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  COLLABORATOR
+}
+
+enum SuggestionStatus {
+  PENDENTE
+  EM_ANALISE
+  APROVADA
+  REJEITADA
+  CONVERTIDA
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  STATUS_CHANGE
+  CONVERT
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  login        String   @unique
+  passwordHash String
+  role         Role     @default(COLLABORATOR)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  questionsCreated    Question[]     @relation("QuestionCreatedBy")
+  questionsUpdated    Question[]     @relation("QuestionUpdatedBy")
+  suggestionsSent     Suggestion[]   @relation("SuggestionSubmittedBy")
+  suggestionsReviewed Suggestion[]   @relation("SuggestionReviewedBy")
+  auditLogs           AuditLog[]
+  searchLogs          SearchLog[]
+  questionViews       QuestionView[]
+  attachmentsUploaded Attachment[]
+}
+
+model Sector {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  questions   Question[]
+  suggestions Suggestion[]
+}
+
+model Question {
+  id          String   @id @default(cuid())
+  question    String
+  answerHtml  String
+  answerText  String
+  keywords    String[] @default([])
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sectorId String
+  sector   Sector @relation(fields: [sectorId], references: [id], onDelete: Restrict)
+
+  createdById String
+  createdBy   User   @relation("QuestionCreatedBy", fields: [createdById], references: [id])
+
+  updatedById String?
+  updatedBy   User?   @relation("QuestionUpdatedBy", fields: [updatedById], references: [id])
+
+  // Managed by a hand-written migration (see prisma/migrations/*_fulltext_search).
+  // `Unsupported` tells Prisma to ignore this column when diffing schema changes.
+  searchVector Unsupported("tsvector")?
+
+  suggestionConverted Suggestion?
+  views               QuestionView[]
+  attachments         Attachment[]
+
+  @@index([sectorId])
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  filename   String // original filename, shown to users
+  storedName String   @unique // random name on disk — never derived from user input
+  mimeType   String
+  size       Int // bytes
+  createdAt  DateTime @default(now())
+
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  uploadedById String
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+
+  @@index([questionId])
+}
+
+model Suggestion {
+  id           String           @id @default(cuid())
+  questionText String
+  context      String?
+  status       SuggestionStatus @default(PENDENTE)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  sectorId String?
+  sector   Sector? @relation(fields: [sectorId], references: [id], onDelete: SetNull)
+
+  submittedById String
+  submittedBy   User   @relation("SuggestionSubmittedBy", fields: [submittedById], references: [id])
+
+  reviewedById String?
+  reviewedBy   User?   @relation("SuggestionReviewedBy", fields: [reviewedById], references: [id])
+
+  convertedQuestionId String?   @unique
+  convertedQuestion   Question? @relation(fields: [convertedQuestionId], references: [id])
+
+  @@index([status])
+}
+
+model SearchLog {
+  id            String   @id @default(cuid())
+  query         String
+  sectorFilter  String?
+  resultCount   Int
+  topQuestionId String?
+  createdAt     DateTime @default(now())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+}
+
+model QuestionView {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([questionId])
+}
+
+model AuditLog {
+  id        String      @id @default(cuid())
+  entity    String
+  entityId  String
+  action    AuditAction
+  meta      Json?
+  createdAt DateTime    @default(now())
+
+  actorId String
+  actor   User   @relation(fields: [actorId], references: [id])
+
+  @@index([entity, entityId])
+}
