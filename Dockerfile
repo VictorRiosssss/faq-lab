@@ -5,6 +5,12 @@ FROM node:22-bookworm-slim
 
 WORKDIR /app
 
+# Sem isto o Prisma avisa "failed to detect the libssl/openssl version to use"
+# em toda execução de CLI (migrate/seed), poluindo o log do container.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
+
 COPY package.json package-lock.json ./
 RUN npm ci
 

@@ -53,7 +53,10 @@ Preencha o `.env` gerado:
 - `SEED_ADMIN_LOGIN`, `SEED_ADMIN_NAME`, `SEED_ADMIN_PASSWORD` — usados pelo seed para
   criar o administrador inicial. Se `SEED_ADMIN_PASSWORD` ficar em branco, uma senha
   aleatória é gerada e impressa **uma única vez** no console ao rodar o seed — anote-a e
-  troque-a depois pelo próprio Portal (`/perfil`).
+  troque-a depois pelo próprio Portal (`/perfil`). Se você já sabe qual senha quer,
+  defina-a aqui: rodar `npx prisma db seed` de novo com `SEED_ADMIN_PASSWORD` preenchida
+  redefine a senha do admin mesmo que ele já exista (é também o mecanismo de recuperação
+  de acesso em produção — ver seção "Produção" abaixo).
 
 ## Inicialização do banco de dados
 
@@ -194,8 +197,18 @@ desenvolvimento local), sem Caddy e sem publicar portas no host — só o essenc
 
    Opcionais (todas têm padrão no compose): `POSTGRES_USER`/`POSTGRES_DB`
    (`labplan`/`labplan_db`), `SEED_ADMIN_LOGIN`/`SEED_ADMIN_NAME` (`admin`/`Administrador`)
-   e `SEED_ADMIN_PASSWORD` — essa última, se ficar em branco, faz o seed gerar uma senha
-   aleatória e imprimir **uma única vez** nos logs do serviço `app` (aba **Logs** do Coolify).
+   e `SEED_ADMIN_PASSWORD`. **Recomendado definir `SEED_ADMIN_PASSWORD` já no primeiro
+   deploy** com uma senha sua: se ficar em branco, o seed gera uma senha aleatória e
+   imprime nos logs do serviço `app` só naquele exato momento — se você não copiar dali na
+   hora (por exemplo, se o container reiniciar antes), ela se perde, porque o log daquele
+   container em específico não volta.
+
+   `SEED_ADMIN_PASSWORD` funciona como reset de senha, não só como valor inicial: toda vez
+   que o container `app` inicia (`docker-entrypoint.sh` roda o seed a cada start), se essa
+   variável estiver definida, a senha do admin é redefinida para esse valor — mesmo que o
+   usuário já exista. **É o caminho oficial pra recuperar acesso**: defina/atualize a
+   variável na aba de variáveis do Coolify e faça um redeploy. Deixando em branco depois,
+   o próximo start não altera mais nada (loga só "administrador já existe").
 4. Configure o domínio do serviço `app` na aba de domínios do recurso (Coolify cuida do
    certificado HTTPS sozinho). O `app` escuta na porta `3000` — se o Coolify pedir uma
    porta explícita no domínio, use `:3000`.

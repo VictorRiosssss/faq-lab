@@ -183,34 +183,49 @@ async function upsertSectors() {
 async function upsertAdminUser() {
   const login = process.env.SEED_ADMIN_LOGIN?.trim() || "admin";
   const name = process.env.SEED_ADMIN_NAME?.trim() || "Administrador";
-  let password = process.env.SEED_ADMIN_PASSWORD?.trim();
-  let generated = false;
+  const explicitPassword = process.env.SEED_ADMIN_PASSWORD?.trim();
 
-  if (!password) {
-    password = crypto.randomBytes(9).toString("base64url");
-    generated = true;
+  const existing = await prisma.user.findUnique({ where: { login } });
+
+  // SEED_ADMIN_PASSWORD, quando definida, é a fonte da verdade: vale na criação
+  // e também redefine a senha de um admin já existente. É o único caminho de
+  // recuperação de acesso que não exige mexer no banco à mão — em compensação,
+  // se ela ficar definida, todo deploy volta a senha para esse valor.
+  if (explicitPassword) {
+    const passwordHash = await hashPassword(explicitPassword);
+
+    if (existing) {
+      await prisma.user.update({ where: { login }, data: { passwordHash } });
+      console.log(`Senha de "${login}" redefinida a partir de SEED_ADMIN_PASSWORD.`);
+    } else {
+      await prisma.user.create({
+        data: { login, name, passwordHash, role: "ADMIN", isActive: true },
+      });
+      console.log(`Administrador "${login}" criado com a senha de SEED_ADMIN_PASSWORD.`);
+    }
+
+    return prisma.user.findUniqueOrThrow({ where: { login } });
   }
 
+  // Sem senha explícita e o admin já existe: não há o que fazer. Gerar e
+  // imprimir uma senha aqui seria mentira — ela não é aplicada a um usuário
+  // existente, e o log daria a entender que sim.
+  if (existing) {
+    console.log(`Administrador "${login}" já existe — senha inalterada.`);
+    return existing;
+  }
+
+  const password = crypto.randomBytes(9).toString("base64url");
   const passwordHash = await hashPassword(password);
 
-  await prisma.user.upsert({
-    where: { login },
-    update: {},
-    create: {
-      login,
-      name,
-      passwordHash,
-      role: "ADMIN",
-      isActive: true,
-    },
+  await prisma.user.create({
+    data: { login, name, passwordHash, role: "ADMIN", isActive: true },
   });
 
-  if (generated) {
-    console.log("\n=== Usuário administrador inicial criado ===");
-    console.log(`Login: ${login}`);
-    console.log(`Senha: ${password}`);
-    console.log("Troque essa senha após o primeiro login.\n");
-  }
+  console.log("\n=== Usuário administrador inicial criado ===");
+  console.log(`Login: ${login}`);
+  console.log(`Senha: ${password}`);
+  console.log("Anote agora — ela não será exibida de novo. Troque após o primeiro login.\n");
 
   return prisma.user.findUniqueOrThrow({ where: { login } });
 }
