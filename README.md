@@ -166,7 +166,45 @@ administrador criado pelo seed.
   rebaixaria o Prisma para uma versão anterior à migração para os driver adapters do
   Prisma 7 — risco aceito e documentado, não corrigido automaticamente.
 
-## Produção (deploy com Docker num servidor próprio)
+## Produção
+
+Duas formas de fazer deploy com Docker: **Coolify** (se você já usa/vai usar Coolify no seu
+servidor) ou uma **VPS pura** com Docker Compose + Caddy próprio, sem nenhum painel. Não
+use os dois `docker-compose*.yml` ao mesmo tempo — são alternativos.
+
+### Opção A — Coolify
+
+Coolify já roda seu próprio proxy reverso (Traefik) cuidando de domínio/HTTPS, e gerencia
+variáveis de ambiente pela própria interface (não lê um `.env` do repositório). Por isso
+existe um compose dedicado, `docker-compose.coolify.yml`, sem Caddy e sem publicar portas
+no host — só o essencial (Postgres + app) para o Coolify orquestrar por cima.
+
+1. No Coolify, crie um novo recurso do tipo **Docker Compose**, apontando para este
+   repositório Git e o arquivo `docker-compose.coolify.yml` (não o `docker-compose.prod.yml`).
+2. O Coolify vai detectar as variáveis do bloco `environment:` do `app` e do `postgres`
+   automaticamente e listar na aba de variáveis de ambiente do recurso. Preencha lá
+   (**não** num `.env` commitado):
+   - `POSTGRES_PASSWORD` — uma senha forte.
+   - `NEXTAUTH_SECRET` — gere com `openssl rand -base64 32`.
+   - `NEXTAUTH_URL` — `https://` + o domínio que você vai configurar no passo 3.
+   - `SEED_ADMIN_PASSWORD` — uma senha conhecida, ou deixe em branco para o container gerar
+     uma aleatória (aparece nos logs do serviço `app` na primeira execução — veja em
+     **Logs** no próprio Coolify).
+   - `POSTGRES_USER`/`POSTGRES_DB`/`SEED_ADMIN_LOGIN`/`SEED_ADMIN_NAME` têm valores padrão
+     no compose (`labplan`/`labplan_db`/`admin`/`Administrador`) — só mude se quiser outros.
+3. Configure o domínio do serviço `app` na aba de domínios do recurso (Coolify cuida do
+   certificado HTTPS sozinho). O `app` escuta na porta `3000` — se o Coolify pedir uma
+   porta explícita no domínio, use `:3000`.
+4. Deploy. O `docker-entrypoint.sh` aplica as migrations e garante o usuário admin antes de
+   iniciar o Next.js, exatamente como na opção B abaixo.
+
+**Se ainda dá erro depois disso**: confira nos logs do serviço `app` se `DATABASE_URL`
+chegou populada (deve aparecer algo como `postgresql://labplan:***@postgres:5432/labplan_db`
+nos logs do `prisma migrate deploy`) — se `POSTGRES_PASSWORD` ficou vazio na aba de
+variáveis do Coolify, a interpolação `${POSTGRES_PASSWORD}` no compose vira uma string
+vazia e a conexão falha.
+
+### Opção B — VPS pura (Docker Compose + Caddy, sem painel)
 
 Requer uma VPS/servidor Linux com [Docker](https://docs.docker.com/engine/install/) e
 [Docker Compose](https://docs.docker.com/compose/install/) instalados, e um domínio (ou
