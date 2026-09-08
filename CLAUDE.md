@@ -7,6 +7,51 @@ dúvidas sobre processos internos organizados por setor; administradores gerenci
 usuários, setores, perguntas/respostas e um fluxo de sugestões. Ver o plano completo em
 `C:\Users\Victor Gabriel Rios\.claude\plans\deep-painting-pretzel.md`.
 
+## Checkpoint — 2026-09-08f (deploy real: primeiro commit/push, e adaptação pra Coolify)
+
+Depois do checkpoint anterior (deploy Docker validado localmente), duas coisas
+aconteceram na tentativa de deploy real do usuário:
+
+- **Primeiro commit/push do projeto inteiro**: o repositório nunca tinha sido commitado
+  (zero commits, apesar do remote `origin` já apontar para
+  `github.com/VictorRiosssss/faq-lab.git` configurado desde o início da sessão). Sem
+  identidade git configurada (nem local nem global) — configurei `user.name`/`user.email`
+  só neste repositório (`git config` sem `--global`). Revisei o `git status` antes de
+  `add -A` pra confirmar que nenhum `.env` real seria commitado (só `.env.example` e
+  `.env.production.example`, que já eram exceções no `.gitignore`). Adicionado
+  `.gitattributes` (`*.sh text eol=lf`) pra garantir que `docker-entrypoint.sh` nunca vá
+  pro servidor Linux com quebra de linha CRLF do Windows (isso quebraria o script com um
+  erro de "bad interpreter" impossível de debugar remotamente). `.claude/scheduled_tasks.lock`
+  (estado de runtime da sessão, não config de projeto) adicionado ao `.gitignore`.
+- **Deploy no Coolify falhou** ("erro no banco de dados"). Causa provável, confirmada
+  contra a documentação oficial do Coolify (`coolify.io/docs/knowledge-base/docker/compose`,
+  via WebSearch/WebFetch nesta sessão — não dá pra testar contra o Coolify real do
+  usuário):
+  1. O `docker-compose.prod.yml` original sobe um Caddy próprio publicando `80`/`443` no
+     host — o Coolify já roda seu próprio proxy (Traefik) nessas portas; publicar as
+     mesmas portas de novo é o tipo de conflito que quebra o deploy.
+  2. O serviço `app` usava `env_file: - .env` pra pegar as credenciais — Coolify não lê um
+     `.env` do repositório em deployments de "Docker Compose"; ele detecta as variáveis do
+     bloco `environment:` do próprio compose e deixa o usuário preenchê-las pela interface
+     dele. Com `env_file` apontando pra um arquivo que não existe no contexto do Coolify, o
+     container provavelmente subia sem `DATABASE_URL` nenhuma.
+  - **Correção**: novo arquivo `docker-compose.coolify.yml` (não substitui o
+    `docker-compose.prod.yml` — são dois caminhos alternativos, documentados como "Opção A"
+    e "Opção B" no README). Sem Caddy, sem publicar porta nenhuma no host (`expose: "3000"`
+    só na rede interna do Docker, que é o que o Traefik do Coolify enxerga). Credenciais
+    via `environment: DATABASE_URL: postgresql://...@postgres:5432/...` com sintaxe
+    `${VAR}`/`${VAR:-default}` direto no compose, pro Coolify detectar e mostrar na aba de
+    variáveis dele — exatamente o pedido do usuário ("já configurar as credenciais no
+    compose"). Postgres continua no mesmo compose (`depends_on` + `condition:
+    service_healthy`), como já era.
+  - **Não testado contra Coolify de verdade** (sem acesso à instância do usuário) — só
+    validado com `docker compose config` localmente (sintaxe + interpolação de variáveis
+    corretas). README explica o que conferir se ainda der erro (checar se
+    `POSTGRES_PASSWORD` ficou vazio na aba de variáveis do Coolify — nesse caso a
+    `DATABASE_URL` interpolada fica com senha vazia e a conexão falha do mesmo jeito).
+  - Commitado e enviado (`git push`) a pedido explícito do usuário, que escolheu entre
+    "commit + push" vs "copiar arquivo direto" via pergunta de esclarecimento.
+
 ## Checkpoint — 2026-09-08e (HUD de anexos, refino visual, deploy Docker pronto)
 
 Sequência de pedidos: HUD de pré-visualização de anexo, ajuste de ícone, refino visual
